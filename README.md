@@ -31,8 +31,8 @@ This is a Zabbix 7.0 compatible template for monitoring Dell iDRAC servers using
 | Macro               | Description                | Example            |
 |--------------------|----------------------------|--------------------|
 | `{$IDRAC.USER}`     | iDRAC login username       | `root`             |
-| `{$IDRAC.PASSWORD}` | iDRAC login password       | `calvin`           |
-| `{$IDRAC.BASEURL}`  | Redfish API base URL       | `https://10.1.3.88`|
+| `{$IDRAC.PASSWORD}` | iDRAC login password       | `xxxxx`           |
+| `{$IDRAC.BASEURL}`  | Redfish API base URL       | `https://10.1.3.x`|
 
 ## 📂 File Contents
 
