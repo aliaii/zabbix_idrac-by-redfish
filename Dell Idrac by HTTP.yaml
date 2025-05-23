@@ -1,0 +1,1765 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: e960332b3f6c46a1956486d4f3f99fce
+      name: 'Templates/Server hardware'
+  templates:
+    - uuid: 8cace06c71184779b16aed36efc077a0
+      template: 'Dell Idrac by HTTP'
+      name: 'Dell Idrac by HTTP'
+      groups:
+        - name: 'Templates/Server hardware'
+      items:
+        - uuid: 17eebb0da5c74246ae131d6c77d62259
+          name: 'Firmware version'
+          type: DEPENDENT
+          key: dell.server.hw.firmware
+          delay: '0'
+          value_type: CHAR
+          trends: '0'
+          description: 'This attribute defines the firmware version of a remote access card.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.firmware
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 6h
+          master_item:
+            key: dell.server.system.get
+          tags:
+            - tag: component
+              value: system
+          triggers:
+            - uuid: c983c21b0d3e48b2a4593930985e9003
+              expression: 'last(/Dell Idrac by HTTP/dell.server.hw.firmware,#1)<>last(/Dell Idrac by HTTP/dell.server.hw.firmware,#2) and length(last(/Dell Idrac by HTTP/dell.server.hw.firmware))>0'
+              name: 'Firmware has changed'
+              opdata: 'Current value: {ITEM.LASTVALUE1}'
+              priority: INFO
+              description: 'Firmware version has changed. Acknowledge to close the problem manually.'
+              manual_close: 'YES'
+              tags:
+                - tag: scope
+                  value: notice
+        - uuid: 9dc38cca02024adda9183ea5a9e85db3
+          name: 'Hardware model name'
+          type: DEPENDENT
+          key: dell.server.hw.model
+          delay: '0'
+          value_type: CHAR
+          trends: '0'
+          description: 'This attribute defines the model name of the system.'
+          inventory_link: MODEL
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.model
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 6h
+          master_item:
+            key: dell.server.system.get
+          tags:
+            - tag: component
+              value: system
+        - uuid: b511bf14e452444c88cd9c352637259e
+          name: 'Hardware serial number'
+          type: DEPENDENT
+          key: dell.server.hw.serialnumber
+          delay: '0'
+          value_type: CHAR
+          trends: '0'
+          description: 'This attribute defines the service tag of the system.'
+          inventory_link: SERIALNO_A
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.serialnumber
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 6h
+          master_item:
+            key: dell.server.system.get
+          tags:
+            - tag: component
+              value: system
+          triggers:
+            - uuid: 5872788ac74c4c339399949d9e68e4e5
+              expression: 'last(/Dell Idrac by HTTP/dell.server.hw.serialnumber,#1)<>last(/Dell Idrac by HTTP/dell.server.hw.serialnumber,#2) and length(last(/Dell Idrac by HTTP/dell.server.hw.serialnumber))>0'
+              name: 'Device has been replaced'
+              event_name: 'Device has been replaced (new serial number received)'
+              priority: INFO
+              description: 'Device serial number has changed. Acknowledge to close the problem manually.'
+              manual_close: 'YES'
+              tags:
+                - tag: scope
+                  value: notice
+        - uuid: 3a94455899db4265ab3e569baa60b90a
+          name: 'Overall system health status'
+          type: DEPENDENT
+          key: dell.server.status
+          delay: '0'
+          value_type: CHAR
+          trends: '0'
+          description: 'This attribute defines the overall rollup status of all components in the system being monitored by the remote access card. Includes system, storage, IO devices, iDRAC, CPU, memory, etc.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.status
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 6h
+          master_item:
+            key: dell.server.system.get
+          tags:
+            - tag: component
+              value: health
+            - tag: component
+              value: system
+          triggers:
+            - uuid: faec0b5a95854d1b8e47ab5d4e650ce9
+              expression: 'find(/Dell Idrac by HTTP/dell.server.status,,"like","Critical")=1'
+              name: 'Server is in a critical state'
+              opdata: 'Current state: {ITEM.LASTVALUE1}'
+              priority: HIGH
+              description: 'Please check the device for faults.'
+              tags:
+                - tag: scope
+                  value: availability
+            - uuid: f0908a79cb82435a98eaf07e6b250d94
+              expression: 'find(/Dell Idrac by HTTP/dell.server.status,,"like","Warning")=1'
+              name: 'Server is in warning state'
+              opdata: 'Current state: {ITEM.LASTVALUE1}'
+              priority: WARNING
+              description: 'Please check the device for warnings.'
+              dependencies:
+                - name: 'Server is in a critical state'
+                  expression: 'find(/Dell Idrac by HTTP/dell.server.status,,"like","Critical")=1'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 9325397bf61e414d8b44ec3e8174aaca
+          name: 'Get system'
+          type: HTTP_AGENT
+          key: dell.server.system.get
+          value_type: TEXT
+          trends: '0'
+          authtype: BASIC
+          username: '{$API.USER}'
+          password: '{$API.PASSWORD}'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  function request(url) {
+                  	api_request = new HttpRequest();
+                  	api_request.addHeader('Authorization: Basic ' + btoa(params.user + ':' + params.password));
+                  	Zabbix.log(4, '[ DELL ] Sending request: ' + url);
+                  
+                  	try {
+                  		response = api_request.get(url);
+                  	} catch (error) {
+                  		Zabbix.log(4, '[ DELL ] Get request returned error ' + error);
+                  		throw 'Get request returned error ' + error + '. Check debug log for more information.';
+                  	}
+                  
+                  	Zabbix.log(4, '[ DELL ] Received response with status code ' +
+                  		api_request.getStatus() + '\n' + response);
+                  
+                  	if (api_request.getStatus() !== 200) {
+                  		var message = 'Request failed with status code ' + api_request.getStatus();
+                  		if (response !== null) {
+                  			if (typeof response.message === 'string') {
+                  				message += ': ' + response.message;
+                  			}
+                  		}
+                  
+                  		throw message + ' Check debug log for more information.';
+                  	}
+                  
+                  	if (response !== null) {
+                  		try {
+                  			response = JSON.parse(response);
+                  		}
+                  		catch (error) {
+                  			Zabbix.log(4, '[ DELL ] Failed to parse response.');
+                  			response = null;
+                  		}
+                  	}
+                  
+                  	return {
+                  		status: api_request.getStatus(),
+                  		body: response
+                  	};
+                  }
+                  
+                  function getField(object, field, def) {
+                  	var names = field.split('.');
+                  	var name = names.shift();
+                  
+                  	while (typeof name !== 'undefined') {
+                  		if (typeof object === undefined || typeof object[name] === 'undefined') {
+                  			return def;
+                  		}
+                  
+                  		object = object[name];
+                  		name = names.shift();
+                  	}
+                  
+                  	return object;
+                  }
+                  
+                  try {
+                  	system = JSON.parse(value);
+                  }
+                  catch (error) {
+                  	Zabbix.log(4, '[ DELL ] Failed to parse response.');
+                  	system = null;
+                  }
+                  
+                  var params = {
+                  	url: '{$API.URL}',
+                  	user: '{$API.USER}',
+                  	password: '{$API.PASSWORD}'
+                  };
+                  var result = {
+                  	model: '',
+                  	serialnumber: '',
+                  	status: '',
+                  	firmware: ''
+                  };
+                  
+                  var index = params.url.indexOf('://');
+                  index = params.url.indexOf('/', (index !== -1) ? (index + 3) : 0);
+                  if (index !== -1) {
+                  	params.url = params.url.substring(0, index);
+                  }
+                  
+                  result.model = getField(system, 'Model', '');
+                  result.serialnumber = getField(system, 'Oem.Dell.DellSystem.ChassisServiceTag', '');
+                  result.status = getField(system, 'Status.Health', '');
+                  
+                  response = request(params.url + '/redfish/v1/Managers/iDRAC.Embedded.1');
+                  result.firmware = getField(response.body, 'FirmwareVersion', '');
+                  
+                  return JSON.stringify(result);
+          url: '{$API.URL}/redfish/v1/Systems/System.Embedded.1'
+          tags:
+            - tag: component
+              value: system
+        - uuid: 2f15214efb254b4ea69524318851d099
+          name: 'ICMP ping'
+          type: SIMPLE
+          key: icmpping
+          delay: 5s
+          tags:
+            - tag: component
+              value: health
+            - tag: component
+              value: network
+          triggers:
+            - uuid: c66d24c86d14407ba43d1b95f1e5e2f5
+              expression: 'max(/Dell Idrac by HTTP/icmpping,#5)=0'
+              name: 'Unavailable by ICMP ping'
+              priority: HIGH
+              description: 'Last three attempts returned timeout.  Please check device connectivity.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 178f941158d8412d9de87c35bb585712
+          name: 'ICMP loss'
+          type: SIMPLE
+          key: icmppingloss
+          delay: 5s
+          value_type: FLOAT
+          units: '%'
+          tags:
+            - tag: component
+              value: health
+            - tag: component
+              value: network
+          triggers:
+            - uuid: 33008018067b44e49c22481474704713
+              expression: 'min(/Dell Idrac by HTTP/icmppingloss,5m)>{$ICMP_LOSS_WARN} and min(/Dell Idrac by HTTP/icmppingloss,5m)<100'
+              name: 'High ICMP ping loss'
+              opdata: 'Loss: {ITEM.LASTVALUE1}'
+              priority: WARNING
+              dependencies:
+                - name: 'Unavailable by ICMP ping'
+                  expression: 'max(/Dell Idrac by HTTP/icmpping,#5)=0'
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: scope
+                  value: performance
+        - uuid: e0dc9e26d00e4c47b70641622c2b3904
+          name: 'ICMP response time'
+          type: SIMPLE
+          key: icmppingsec
+          delay: 5s
+          value_type: FLOAT
+          units: s
+          tags:
+            - tag: component
+              value: health
+            - tag: component
+              value: network
+          triggers:
+            - uuid: c5661b64d4134a95bdb4b92bbe88fbb6
+              expression: 'avg(/Dell Idrac by HTTP/icmppingsec,5m)>{$ICMP_RESPONSE_TIME_WARN}'
+              name: 'High ICMP ping response time'
+              opdata: 'Value: {ITEM.LASTVALUE1}'
+              priority: WARNING
+              description: 'Average ICMP response time is too high.'
+              dependencies:
+                - name: 'High ICMP ping loss'
+                  expression: 'min(/Dell Idrac by HTTP/icmppingloss,5m)>{$ICMP_LOSS_WARN} and min(/Dell Idrac by HTTP/icmppingloss,5m)<100'
+                - name: 'Unavailable by ICMP ping'
+                  expression: 'max(/Dell Idrac by HTTP/icmpping,#5)=0'
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: scope
+                  value: performance
+        - uuid: 2718651729024856b92e59ed48f576c8
+          name: 'Redfish API'
+          type: SIMPLE
+          key: 'net.tcp.service[https]'
+          description: |
+            The availability of Redfish API on the server.
+            Possible values:
+              0 unavailable
+              1 available
+          valuemap:
+            name: zabbix.host.available
+          tags:
+            - tag: component
+              value: health
+            - tag: component
+              value: system
+          triggers:
+            - uuid: 44f8545742dd4322a0e30fa819101367
+              expression: 'last(/Dell Idrac by HTTP/net.tcp.service[https])=0'
+              name: 'Redfish API service is unavailable'
+              priority: HIGH
+              description: 'The service is unavailable or does not accept TCP connections.'
+              tags:
+                - tag: scope
+                  value: availability
+      discovery_rules:
+        - uuid: be700db440664c74ab1c7c0727d70b53
+          name: 'FAN discovery'
+          type: HTTP_AGENT
+          key: fan.discovery
+          delay: 1h
+          authtype: BASIC
+          username: '{$API.USER}'
+          password: '{$API.PASSWORD}'
+          item_prototypes:
+            - uuid: f23005f5f9a24fdfa6af3cbabaa4c33f
+              name: '{#FAN_NAME} Get sensor'
+              type: HTTP_AGENT
+              key: 'dell.server.sensor.fan.get[{#FAN_NAME}]'
+              value_type: TEXT
+              trends: '0'
+              authtype: BASIC
+              username: '{$API.USER}'
+              password: '{$API.PASSWORD}'
+              url: '{$API.URL}{#ODATA}'
+              tags:
+                - tag: component
+                  value: fan
+                - tag: component
+                  value: raw
+            - uuid: 32371e5ab81048de843e7cdcc37bacb4
+              name: '{#FAN_NAME} Speed'
+              type: DEPENDENT
+              key: 'dell.server.sensor.fan.speed[{#FAN_NAME}]'
+              delay: '0'
+              value_type: TEXT
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.Reading
+              master_item:
+                key: 'dell.server.sensor.fan.get[{#FAN_NAME}]'
+              tags:
+                - tag: component
+                  value: fan
+            - uuid: 95b94c82b6cc466caeb58d09b38db04a
+              name: '{#FAN_NAME} Status'
+              type: DEPENDENT
+              key: 'dell.server.sensor.fan.status[{#FAN_NAME}]'
+              delay: '0'
+              value_type: TEXT
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.Status.Health
+              master_item:
+                key: 'dell.server.sensor.fan.get[{#FAN_NAME}]'
+              tags:
+                - tag: component
+                  value: fan
+              trigger_prototypes:
+                - uuid: 4f3ee8992593442785d256b45b0c0048
+                  expression: 'find(/Dell Idrac by HTTP/dell.server.sensor.fan.status[{#FAN_NAME}],,"like","Critical")=1'
+                  name: '{#FAN_NAME} is in a critical state'
+                  opdata: 'Current state: {ITEM.LASTVALUE1}'
+                  priority: HIGH
+                  manual_close: 'YES'
+                  tags:
+                    - tag: scope
+                      value: availability
+                - uuid: 506441807259493c81a79224a19dee08
+                  expression: 'find(/Dell Idrac by HTTP/dell.server.sensor.fan.status[{#FAN_NAME}],,"like","Warning")=1'
+                  name: '{#FAN_NAME} is in warning state'
+                  opdata: 'Current state: {ITEM.LASTVALUE1}'
+                  priority: WARNING
+                  manual_close: 'YES'
+                  dependencies:
+                    - name: '{#FAN_NAME} is in a critical state'
+                      expression: 'find(/Dell Idrac by HTTP/dell.server.sensor.fan.status[{#FAN_NAME}],,"like","Critical")=1'
+                  tags:
+                    - tag: scope
+                      value: availability
+          url: '{$API.URL}/redfish/v1/Chassis/System.Embedded.1/Sensors'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var params = {
+                  	url: '{$API.URL}',
+                  	user: '{$API.USER}',
+                  	password: '{$API.PASSWORD}'
+                  };
+                  
+                  function request(url) {
+                  	var api_request = new HttpRequest();
+                  	api_request.addHeader('Authorization: Basic ' + btoa(params.user + ':' + params.password));
+                  	Zabbix.log(4, '[ DELL ] Sending request: ' + url);
+                  
+                  	try {
+                  		var response = api_request.get(url);
+                  		if (api_request.getStatus() !== 200) {
+                  			throw 'Request failed with status code ' + api_request.getStatus();
+                  		}
+                  		return JSON.parse(response);
+                  	} catch (error) {
+                  		Zabbix.log(4, '[ DELL ] Request error: ' + error);
+                  		throw 'Request error: ' + error;
+                  	}
+                  }
+                  
+                  var result = [];
+                  var sensorData = request(params.url + '/redfish/v1/Chassis/System.Embedded.1/Sensors');
+                  
+                  if (sensorData.Members instanceof Array) {
+                  	sensorData.Members.forEach(function(sensor) {
+                  		var odata = sensor['@odata.id'];
+                  		if (typeof odata === 'string' && odata.indexOf('Fan.Embedded') !== -1) {
+                  			// 對每個風扇再發一次 GET 請求取得詳細資訊
+                  			var detail = request(params.url + odata);
+                  			result.push({
+                  				"{#FAN_NAME}": detail.Name || odata,
+                  				"{#ODATA}": odata
+                  			});
+                  		}
+                  	});
+                  }
+                  
+                  return JSON.stringify(result);
+                  
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 6h
+        - uuid: 243a1a693a1140d6ba1a98b7e7b2c909
+          name: 'Network interface discovery'
+          type: HTTP_AGENT
+          key: net.if.discovery
+          delay: 1h
+          authtype: BASIC
+          username: '{$API.USER}'
+          password: '{$API.PASSWORD}'
+          item_prototypes:
+            - uuid: f2a648e3dbee40c598b7bbd151caa44a
+              name: '{#IFNAME} Get interface'
+              type: HTTP_AGENT
+              key: 'dell.server.net.if.get[{#IFNAME}]'
+              value_type: TEXT
+              trends: '0'
+              authtype: BASIC
+              username: '{$API.USER}'
+              password: '{$API.PASSWORD}'
+              url: '{$API.URL}{#ODATA}'
+              tags:
+                - tag: component
+                  value: network
+                - tag: component
+                  value: raw
+            - uuid: fb0aa498387541e0907752f0aed0936b
+              name: '{#IFNAME} Status'
+              type: DEPENDENT
+              key: 'dell.server.net.if.health[{#IFNAME}]'
+              delay: '0'
+              value_type: TEXT
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.Status.Health
+              master_item:
+                key: 'dell.server.net.if.get[{#IFNAME}]'
+              tags:
+                - tag: component
+                  value: network
+              trigger_prototypes:
+                - uuid: 8296155dc62148d797609567e3ae1773
+                  expression: 'find(/Dell Idrac by HTTP/dell.server.net.if.health[{#IFNAME}],,"like","Critical")=1'
+                  name: '{#IFNAME} is in a critical state'
+                  opdata: 'Current state: {ITEM.LASTVALUE1}'
+                  priority: HIGH
+                  manual_close: 'YES'
+                  tags:
+                    - tag: scope
+                      value: availability
+                - uuid: 09477b33d43e43fc867d9bb896caea5a
+                  expression: 'find(/Dell Idrac by HTTP/dell.server.net.if.health[{#IFNAME}],,"like","Warning")=1'
+                  name: '{#IFNAME} is in warning state'
+                  opdata: 'Current state: {ITEM.LASTVALUE1}'
+                  priority: WARNING
+                  manual_close: 'YES'
+                  dependencies:
+                    - name: '{#IFNAME} is in a critical state'
+                      expression: 'find(/Dell Idrac by HTTP/dell.server.net.if.health[{#IFNAME}],,"like","Critical")=1'
+                  tags:
+                    - tag: scope
+                      value: availability
+            - uuid: d809d720ad6c4687b13962afaab67b72
+              name: '{#IFNAME} Speed'
+              type: DEPENDENT
+              key: 'dell.server.net.if.speed[{#IFNAME}]'
+              delay: '0'
+              units: '!Mbps'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.CurrentLinkSpeedMbps
+              master_item:
+                key: 'dell.server.net.if.get[{#IFNAME}]'
+              tags:
+                - tag: component
+                  value: network
+            - uuid: a7ae057dbebc41af8f62f7750647c273
+              name: '{#IFNAME} State'
+              type: DEPENDENT
+              key: 'dell.server.net.if.state[{#IFNAME}]'
+              delay: '0'
+              value_type: TEXT
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.Status.State
+              master_item:
+                key: 'dell.server.net.if.get[{#IFNAME}]'
+              tags:
+                - tag: component
+                  value: network
+            - uuid: 8365f26c304e4700af4d07b528fce41e
+              name: '{#IFNAME} Link status'
+              type: DEPENDENT
+              key: 'dell.server.net.if.status[{#IFNAME}]'
+              delay: '0'
+              value_type: TEXT
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.LinkStatus
+              master_item:
+                key: 'dell.server.net.if.get[{#IFNAME}]'
+              tags:
+                - tag: component
+                  value: network
+              trigger_prototypes:
+                - uuid: b1e9da56ac6241f0a0bc6d6e4061621d
+                  expression: '{$IFCONTROL:"{#IFNAME}"}=1 and (find(/Dell Idrac by HTTP/dell.server.net.if.status[{#IFNAME}],,"like")="Down" and last(/Dell Idrac by HTTP/dell.server.net.if.status[{#IFNAME}],#1)<>last(/Dell Idrac by HTTP/dell.server.net.if.status[{#IFNAME}],#2))'
+                  recovery_mode: RECOVERY_EXPRESSION
+                  recovery_expression: 'find(/Dell Idrac by HTTP/dell.server.net.if.status[{#IFNAME}],,"like")<>"Down" or {$IFCONTROL:"{#IFNAME}"}=0'
+                  name: '{#IFNAME} Link down'
+                  opdata: 'Current state: {ITEM.LASTVALUE1}'
+                  priority: AVERAGE
+                  manual_close: 'YES'
+                  tags:
+                    - tag: scope
+                      value: availability
+          url: '{$API.URL}/redfish/v1/Chassis/System.Embedded.1/NetworkAdapters'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  function request(url) {
+                  	api_request = new HttpRequest();
+                  	api_request.addHeader('Authorization: Basic ' + btoa(params.user + ':' + params.password));
+                  	Zabbix.log(4, '[ DELL ] Sending request: ' + url);
+                  
+                  	try {
+                  		response = api_request.get(url);
+                  	} catch (error) {
+                  		Zabbix.log(4, '[ DELL ] Get request returned error ' + error);
+                  		throw 'Get request returned error ' + error + '. Check debug log for more information.';
+                  	}
+                  
+                  	Zabbix.log(4, '[ DELL ] Received response with status code ' +
+                  		api_request.getStatus() + '\n' + response);
+                  
+                  	if (api_request.getStatus() !== 200) {
+                  		var message = 'Request failed with status code ' + api_request.getStatus();
+                  		if (response !== null) {
+                  			if (typeof response.message === 'string') {
+                  				message += ': ' + response.message;
+                  			}
+                  		}
+                  
+                  		throw message + ' Check debug log for more information.';
+                  	}
+                  
+                  	if (response !== null) {
+                  		try {
+                  			response = JSON.parse(response);
+                  		}
+                  		catch (error) {
+                  			Zabbix.log(4, '[ DELL ] Failed to parse response.');
+                  			response = null;
+                  		}
+                  	}
+                  
+                  	return {
+                  		status: api_request.getStatus(),
+                  		body: response
+                  	};
+                  }
+                  
+                  function getField(object, field, def) {
+                  	var names = field.split('.');
+                  	var name = names.shift();
+                  
+                  	while (typeof name !== 'undefined') {
+                  		if (typeof object === undefined || typeof object[name] === 'undefined') {
+                  			return def;
+                  		}
+                  
+                  		object = object[name];
+                  		name = names.shift();
+                  	}
+                  
+                  	return object;
+                  }
+                  
+                  try {
+                  	adapters = JSON.parse(value);
+                  }
+                  catch (error) {
+                  	Zabbix.log(4, '[ DELL ] Failed to parse response.');
+                  	adapters = null;
+                  }
+                  
+                  var params = {
+                  	url: '{$API.URL}',
+                  	user: '{$API.USER}',
+                  	password: '{$API.PASSWORD}'
+                  };
+                  var result = [];
+                  
+                  var index = params.url.indexOf('://');
+                  index = params.url.indexOf('/', (index !== -1) ? (index + 3) : 0);
+                  if (index !== -1) {
+                  	params.url = params.url.substring(0, index);
+                  }
+                  
+                  if (adapters.Members instanceof Array) {
+                  	adapters.Members.forEach(function (adapter) {
+                  		if (typeof adapter["@odata.id"] === 'string') {
+                  			response = request(params.url + adapter["@odata.id"] + "/NetworkPorts");
+                  			ports = response.body;
+                  			if (ports.Members instanceof Array) {
+                  				ports.Members.forEach(function (port) {
+                  					if (typeof port["@odata.id"] === 'string') {
+                  						response = request(params.url + port["@odata.id"]);
+                  						result.push({ '{#IFNAME}': getField(response.body, 'Id', ''), '{#ODATA}': port["@odata.id"] });
+                  					}
+                  				});
+                  			}
+                  		}
+                  	});
+                  }
+                  
+                  return JSON.stringify(result);
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 6h
+        - uuid: 5db24c9fa93f4e9b9788ab4096697f74
+          name: 'Physical disk discovery'
+          type: HTTP_AGENT
+          key: physicaldisk.discovery
+          delay: 1h
+          authtype: BASIC
+          username: '{$API.USER}'
+          password: '{$API.PASSWORD}'
+          item_prototypes:
+            - uuid: 1dc214d6361a42c39d6dbf75b779a79f
+              name: '{#DISK_NAME} Get disk'
+              type: HTTP_AGENT
+              key: 'dell.server.hw.physicaldisk.get[{#DISK_NAME}]'
+              value_type: TEXT
+              trends: '0'
+              authtype: BASIC
+              username: '{$API.USER}'
+              password: '{$API.PASSWORD}'
+              description: 'Returns the metrics of a physical disk.'
+              url: '{$API.URL}{#ODATA}'
+              tags:
+                - tag: component
+                  value: physicaldisk
+                - tag: component
+                  value: raw
+                - tag: component
+                  value: storage
+            - uuid: 003c0290848a480b987d7e02ef77293e
+              name: '{#DISK_NAME} Life Left'
+              type: DEPENDENT
+              key: 'dell.server.hw.physicaldisk.lifeleft[{#DISK_NAME}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.PredictedMediaLifeLeftPercent
+                - type: JAVASCRIPT
+                  parameters:
+                    - 'return value + " %";'
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 6h
+              master_item:
+                key: 'dell.server.hw.physicaldisk.get[{#DISK_NAME}]'
+              tags:
+                - tag: component
+                  value: physicaldisk
+                - tag: component
+                  value: storage
+            - uuid: 110f21c87f234eb181e145156646a158
+              name: '{#DISK_NAME} Media type'
+              type: DEPENDENT
+              key: 'dell.server.hw.physicaldisk.media_type[{#DISK_NAME}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.MediaType
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 6h
+              master_item:
+                key: 'dell.server.hw.physicaldisk.get[{#DISK_NAME}]'
+              tags:
+                - tag: component
+                  value: physicaldisk
+                - tag: component
+                  value: storage
+            - uuid: 856ed87089ee49c781446a65accdaced
+              name: '{#DISK_NAME} Model name'
+              type: DEPENDENT
+              key: 'dell.server.hw.physicaldisk.model[{#DISK_NAME}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.Model
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 6h
+              master_item:
+                key: 'dell.server.hw.physicaldisk.get[{#DISK_NAME}]'
+              tags:
+                - tag: component
+                  value: physicaldisk
+                - tag: component
+                  value: storage
+            - uuid: 5b4e30c55f414bc79eb3cca1f829099c
+              name: '{#DISK_NAME} Serial number'
+              type: DEPENDENT
+              key: 'dell.server.hw.physicaldisk.serialnumber[{#DISK_NAME}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.SerialNumber
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 6h
+              master_item:
+                key: 'dell.server.hw.physicaldisk.get[{#DISK_NAME}]'
+              tags:
+                - tag: component
+                  value: physicaldisk
+                - tag: component
+                  value: storage
+              trigger_prototypes:
+                - uuid: 203de96197cf4b069162f26fc94029d2
+                  expression: 'last(/Dell Idrac by HTTP/dell.server.hw.physicaldisk.serialnumber[{#DISK_NAME}],#1)<>last(/Dell Idrac by HTTP/dell.server.hw.physicaldisk.serialnumber[{#DISK_NAME}],#2) and length(last(/Dell Idrac by HTTP/dell.server.hw.physicaldisk.serialnumber[{#DISK_NAME}]))>0'
+                  name: '{#DISK_NAME} has been replaced'
+                  event_name: '{#DISK_NAME} has been replaced (new serial number received)'
+                  priority: INFO
+                  manual_close: 'YES'
+                  tags:
+                    - tag: scope
+                      value: notice
+            - uuid: 75ff9b84acba4b01b66ab99598a1f58a
+              name: '{#DISK_NAME} Size'
+              type: DEPENDENT
+              key: 'dell.server.hw.physicaldisk.size[{#DISK_NAME}]'
+              delay: '0'
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.CapacityBytes
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 6h
+              master_item:
+                key: 'dell.server.hw.physicaldisk.get[{#DISK_NAME}]'
+              tags:
+                - tag: component
+                  value: physicaldisk
+                - tag: component
+                  value: storage
+            - uuid: ee3d6ac7d7c9408591995fd0c3c21b41
+              name: '{#DISK_NAME} Status'
+              type: DEPENDENT
+              key: 'dell.server.hw.physicaldisk.status[{#DISK_NAME}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.Status.Health
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 6h
+              master_item:
+                key: 'dell.server.hw.physicaldisk.get[{#DISK_NAME}]'
+              tags:
+                - tag: component
+                  value: physicaldisk
+                - tag: component
+                  value: storage
+              trigger_prototypes:
+                - uuid: ebc69f635c3540bc8c88a5e93d209008
+                  expression: 'find(/Dell Idrac by HTTP/dell.server.hw.physicaldisk.status[{#DISK_NAME}],,"like","Critical")=1'
+                  name: '{#DISK_NAME} is in a critical state'
+                  opdata: 'Current state: {ITEM.LASTVALUE1}'
+                  priority: HIGH
+                  manual_close: 'YES'
+                  tags:
+                    - tag: scope
+                      value: availability
+                - uuid: 15813253371647ce9c2038c253579db3
+                  expression: 'find(/Dell Idrac by HTTP/dell.server.hw.physicaldisk.status[{#DISK_NAME}],,"like","Warning")=1'
+                  name: '{#DISK_NAME} is in warning state'
+                  opdata: 'Current state: {ITEM.LASTVALUE1}'
+                  priority: WARNING
+                  dependencies:
+                    - name: '{#DISK_NAME} is in a critical state'
+                      expression: 'find(/Dell Idrac by HTTP/dell.server.hw.physicaldisk.status[{#DISK_NAME}],,"like","Critical")=1'
+                  tags:
+                    - tag: scope
+                      value: availability
+          url: '{$API.URL}/redfish/v1/Systems/System.Embedded.1/Storage'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  function request(url) {
+                  	api_request = new HttpRequest();
+                  	api_request.addHeader('Authorization: Basic ' + btoa(params.user + ':' + params.password));
+                  	Zabbix.log(4, '[ DELL ] Sending request: ' + url);
+                  
+                  	try {
+                  		response = api_request.get(url);
+                  	} catch (error) {
+                  		Zabbix.log(4, '[ DELL ] Get request returned error ' + error);
+                  		throw 'Get request returned error ' + error + '. Check debug log for more information.';
+                  	}
+                  
+                  	Zabbix.log(4, '[ DELL ] Received response with status code ' +
+                  		api_request.getStatus() + '\n' + response);
+                  
+                  	if (api_request.getStatus() !== 200) {
+                  		var message = 'Request failed with status code ' + api_request.getStatus();
+                  		if (response !== null) {
+                  			if (typeof response.message === 'string') {
+                  				message += ': ' + response.message;
+                  			}
+                  		}
+                  
+                  		throw message + ' Check debug log for more information.';
+                  	}
+                  
+                  	if (response !== null) {
+                  		try {
+                  			response = JSON.parse(response);
+                  		}
+                  		catch (error) {
+                  			Zabbix.log(4, '[ DELL ] Failed to parse response.');
+                  			response = null;
+                  		}
+                  	}
+                  
+                  	return {
+                  		status: api_request.getStatus(),
+                  		body: response
+                  	};
+                  }
+                  
+                  function getField(object, field, def) {
+                  	var names = field.split('.');
+                  	var name = names.shift();
+                  
+                  	while (typeof name !== 'undefined') {
+                  		if (typeof object === undefined || typeof object[name] === 'undefined') {
+                  			return def;
+                  		}
+                  
+                  		object = object[name];
+                  		name = names.shift();
+                  	}
+                  
+                  	return object;
+                  }
+                  
+                  try {
+                  	storages = JSON.parse(value);
+                  }
+                  catch (error) {
+                  	Zabbix.log(4, '[ DELL ] Failed to parse response.');
+                  	storages = null;
+                  }
+                  
+                  var params = {
+                  	url: '{$API.URL}',
+                  	user: '{$API.USER}',
+                  	password: '{$API.PASSWORD}'
+                  };
+                  var result = [];
+                  
+                  var index = params.url.indexOf('://');
+                  index = params.url.indexOf('/', (index !== -1) ? (index + 3) : 0);
+                  if (index !== -1) {
+                  	params.url = params.url.substring(0, index);
+                  }
+                  
+                  if (storages.Members instanceof Array) {
+                  	storages.Members.forEach(function (storage) {
+                  		if (typeof storage["@odata.id"] === 'string') {
+                  			response = request(params.url + storage["@odata.id"]);
+                  			drives = response.body;
+                  			if (drives.Drives instanceof Array) {
+                  				drives.Drives.forEach(function (drive) {
+                  					if (typeof drive["@odata.id"] === 'string') {
+                  						response = request(params.url + drive["@odata.id"]);
+                  						result.push({ '{#DISK_NAME}': getField(response.body, 'Name', ''), '{#ODATA}': drive["@odata.id"] });
+                  					}
+                  				});
+                  			}
+                  		}
+                  	});
+                  }
+                  
+                  return JSON.stringify(result);
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 6h
+        - uuid: 3b21f6a8b5bc404393010bce9323971b
+          name: 'PSU discovery'
+          type: HTTP_AGENT
+          key: psu.discovery1
+          delay: 1h
+          authtype: BASIC
+          username: '{$API.USER}'
+          password: '{$API.PASSWORD}'
+          item_prototypes:
+            - uuid: a8ef0193964a4bef8516305bac713866
+              name: '{#PSU_NAME} Get sensor'
+              type: HTTP_AGENT
+              key: 'dell.server.sensor.psu.get[{#PSU_NAME}]'
+              value_type: TEXT
+              trends: '0'
+              authtype: BASIC
+              username: '{$API.USER}'
+              password: '{$API.PASSWORD}'
+              url: '{$API.URL}{#ODATA}'
+              tags:
+                - tag: component
+                  value: psu
+                - tag: component
+                  value: raw
+            - uuid: cc6fd5207f5449a68060f2aa5e68b26d
+              name: '{#PSU_NAME}'
+              type: DEPENDENT
+              key: 'dell.server.sensor.psu.status[{#PSU_NAME}]'
+              delay: '0'
+              value_type: TEXT
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.Status.Health
+              master_item:
+                key: 'dell.server.sensor.psu.get[{#PSU_NAME}]'
+              tags:
+                - tag: component
+                  value: psu
+              trigger_prototypes:
+                - uuid: 74cd034e6c604c9bb861efb0b438d851
+                  expression: 'find(/Dell Idrac by HTTP/dell.server.sensor.psu.status[{#PSU_NAME}],,"like","Critical")=1'
+                  name: '{#PSU_NAME} is in a critical state'
+                  opdata: 'Current state: {ITEM.LASTVALUE1}'
+                  priority: HIGH
+                  manual_close: 'YES'
+                  tags:
+                    - tag: scope
+                      value: availability
+                - uuid: 782cfe918618499fbe02a2b34f17411e
+                  expression: 'find(/Dell Idrac by HTTP/dell.server.sensor.psu.status[{#PSU_NAME}],,"like","Warning")=1'
+                  name: '{#PSU_NAME} is in warning state'
+                  opdata: 'Current state: {ITEM.LASTVALUE1}'
+                  priority: WARNING
+                  manual_close: 'YES'
+                  dependencies:
+                    - name: '{#PSU_NAME} is in a critical state'
+                      expression: 'find(/Dell Idrac by HTTP/dell.server.sensor.psu.status[{#PSU_NAME}],,"like","Critical")=1'
+                  tags:
+                    - tag: scope
+                      value: availability
+          url: '{$API.URL}/redfish/v1/Chassis/System.Embedded.1/Sensors'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var params = {
+                  	url: '{$API.URL}',
+                  	user: '{$API.USER}',
+                  	password: '{$API.PASSWORD}'
+                  };
+                  
+                  function request(url) {
+                  	var r = new HttpRequest();
+                  	r.addHeader('Authorization: Basic ' + btoa(params.user + ':' + params.password));
+                  	Zabbix.log(4, '[DELL PSU] Sending request: ' + url);
+                  
+                  	try {
+                  		var res = r.get(url);
+                  		if (r.getStatus() !== 200) throw 'HTTP ' + r.getStatus();
+                  		Zabbix.log(4, '[DELL PSU] Received: ' + res);
+                  		return JSON.parse(res);
+                  	} catch (e) {
+                  		Zabbix.log(4, '[DELL PSU] Error requesting ' + url + ': ' + e);
+                  		return null;
+                  	}
+                  }
+                  
+                  function getField(obj, path, def) {
+                  	if (!obj) return def;
+                  	var parts = path.split('.');
+                  	for (var i = 0; i < parts.length; i++) {
+                  		if (typeof obj[parts[i]] === 'undefined') return def;
+                  		obj = obj[parts[i]];
+                  	}
+                  	return obj;
+                  }
+                  
+                  // 修剪 base URL
+                  var idx = params.url.indexOf('://');
+                  idx = params.url.indexOf('/', (idx !== -1) ? (idx + 3) : 0);
+                  if (idx !== -1) {
+                  	params.url = params.url.substring(0, idx);
+                  }
+                  
+                  // 發送 Redfish PSU 查詢
+                  var data = request(params.url + '/redfish/v1/Chassis/System.Embedded.1/Power');
+                  var result = [];
+                  
+                  if (data && data.PowerSupplies instanceof Array) {
+                  	data.PowerSupplies.forEach(function (psu, index) {
+                  		var slot = getField(psu, 'MemberId', index.toString());
+                  		var name = getField(psu, 'Name', '');
+                  		var serial = getField(psu, 'SerialNumber', '');
+                  		var odata = getField(psu, '@odata.id', '');
+                  
+                  		// fallback 用 PSU Slot 拼 URI（通常已提供 @odata.id）
+                  		if (!odata && slot) {
+                  			odata = '/redfish/v1/Chassis/System.Embedded.1/Power/PowerSupplies/PSU.Slot.' + (parseInt(slot) + 1);
+                  		}
+                  
+                  		result.push({
+                  			'{#PSU_SLOT}': slot,
+                  			'{#PSU_NAME}': name,
+                  			'{#PSU_SERIAL}': serial,
+                  			'{#ODATA}': odata
+                  		});
+                  	});
+                  }
+                  
+                  return JSON.stringify(result);
+                  
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 6h
+        - uuid: d3139058af934532aef3391daaaf14f0
+          name: 'Temperature discovery'
+          type: HTTP_AGENT
+          key: temp.discovery
+          delay: 1h
+          authtype: BASIC
+          username: '{$API.USER}'
+          password: '{$API.PASSWORD}'
+          item_prototypes:
+            - uuid: 5302435e0b2142e3b9ba3ecea6a110bf
+              name: '{#SENSOR_NAME} Get sensor'
+              type: HTTP_AGENT
+              key: 'dell.server.sensor.temp.get[{#SENSOR_NAME}]'
+              value_type: TEXT
+              trends: '0'
+              authtype: BASIC
+              username: '{$API.USER}'
+              password: '{$API.PASSWORD}'
+              preprocessing:
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 6h
+              url: '{$API.URL}{#ODATA}'
+              tags:
+                - tag: component
+                  value: raw
+                - tag: component
+                  value: temperature
+            - uuid: 4076a05c00424e1cb77ecc238700f1cb
+              name: '{#SENSOR_NAME} Status'
+              type: DEPENDENT
+              key: 'dell.server.sensor.temp.status[{#SENSOR_NAME}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 6h
+                - type: JSONPATH
+                  parameters:
+                    - $.Status.Health
+              master_item:
+                key: 'dell.server.sensor.temp.get[{#SENSOR_NAME}]'
+              tags:
+                - tag: component
+                  value: temperature
+              trigger_prototypes:
+                - uuid: fe93441175bc40ddacd1bcc481ba64d9
+                  expression: 'find(/Dell Idrac by HTTP/dell.server.sensor.temp.status[{#SENSOR_NAME}],,"like","Critical")=1'
+                  name: '{#SENSOR_NAME} is in a critical state'
+                  opdata: 'Current state: {ITEM.LASTVALUE1}'
+                  priority: HIGH
+                  manual_close: 'YES'
+                  tags:
+                    - tag: scope
+                      value: availability
+                - uuid: 1e3fcec69d6b4356b5035f2b5f3b70d3
+                  expression: 'find(/Dell Idrac by HTTP/dell.server.sensor.temp.status[{#SENSOR_NAME}],,"like","Warning")=1'
+                  name: '{#SENSOR_NAME} is in warning state'
+                  opdata: 'Current state: {ITEM.LASTVALUE1}'
+                  priority: WARNING
+                  manual_close: 'YES'
+                  dependencies:
+                    - name: '{#SENSOR_NAME} is in a critical state'
+                      expression: 'find(/Dell Idrac by HTTP/dell.server.sensor.temp.status[{#SENSOR_NAME}],,"like","Critical")=1'
+                  tags:
+                    - tag: scope
+                      value: availability
+            - uuid: 727d78fe7928460fa1cc633ba13b8738
+              name: '{#SENSOR_NAME} Value'
+              type: DEPENDENT
+              key: 'dell.server.sensor.temp.value[{#SENSOR_NAME}]'
+              delay: '0'
+              value_type: FLOAT
+              units: °C
+              preprocessing:
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 6h
+                - type: JSONPATH
+                  parameters:
+                    - $.Reading
+              master_item:
+                key: 'dell.server.sensor.temp.get[{#SENSOR_NAME}]'
+              tags:
+                - tag: component
+                  value: temperature
+          url: '{$API.URL}/redfish/v1/Chassis/System.Embedded.1/Sensors'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var params = {
+                  	url: '{$API.URL}',
+                  	user: '{$API.USER}',
+                  	password: '{$API.PASSWORD}'
+                  };
+                  
+                  function request(url) {
+                  	var api_request = new HttpRequest();
+                  	api_request.addHeader('Authorization: Basic ' + btoa(params.user + ':' + params.password));
+                  	Zabbix.log(4, '[ DELL ] Request: ' + url);
+                  
+                  	try {
+                  		var response = api_request.get(url);
+                  		if (api_request.getStatus() !== 200) {
+                  			throw 'Status ' + api_request.getStatus();
+                  		}
+                  		return JSON.parse(response);
+                  	} catch (e) {
+                  		Zabbix.log(4, '[ DELL ] Error: ' + e);
+                  		return null;
+                  	}
+                  }
+                  
+                  function getField(obj, path, def) {
+                  	if (!obj) return def;
+                  	var parts = path.split('.');
+                  	for (var i = 0; i < parts.length; i++) {
+                  		if (typeof obj[parts[i]] === 'undefined') return def;
+                  		obj = obj[parts[i]];
+                  	}
+                  	return obj;
+                  }
+                  
+                  try {
+                  	sensors = JSON.parse(value);
+                  } catch (e) {
+                  	Zabbix.log(4, '[ DELL ] Invalid JSON.');
+                  	sensors = null;
+                  }
+                  
+                  var result = [];
+                  if (sensors && sensors.Members instanceof Array) {
+                  	sensors.Members.forEach(function (sensor) {
+                  		var odata = sensor['@odata.id'];
+                  		if (typeof odata === 'string' && odata.toLowerCase().includes('temp')) {
+                  			var detail = request(params.url + odata);
+                  			if (detail) {
+                  				result.push({
+                  					'{#SENSOR_NAME}': getField(detail, 'Name', odata),
+                  					'{#ODATA}': odata
+                  				});
+                  			}
+                  		}
+                  	});
+                  }
+                  
+                  return JSON.stringify(result);
+                  
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 6h
+        - uuid: 6e76a7d7c0c74b33bff17c50dee72ab6
+          name: 'Virtual disk discovery'
+          type: HTTP_AGENT
+          key: virtualdisk.discovery
+          delay: 1h
+          authtype: BASIC
+          username: '{$API.USER}'
+          password: '{$API.PASSWORD}'
+          item_prototypes:
+            - uuid: c97ad2e3080e46fdb08b5863041714f7
+              name: '{#DISK_NAME} Get disk'
+              type: HTTP_AGENT
+              key: 'dell.server.hw.virtualdisk.get[{#DISK_NAME}]'
+              value_type: TEXT
+              trends: '0'
+              authtype: BASIC
+              username: '{$API.USER}'
+              password: '{$API.PASSWORD}'
+              url: '{$API.URL}{#ODATA}'
+              tags:
+                - tag: component
+                  value: raw
+                - tag: component
+                  value: virtualdisk
+            - uuid: c07f16ae93834df495d89c3c74b448b4
+              name: '{#DISK_NAME} RAID status'
+              type: DEPENDENT
+              key: 'dell.server.hw.virtualdisk.raidstatus[{#DISK_NAME}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              status: DISABLED
+              discover: NO_DISCOVER
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.Oem.Dell.DellVirtualDisk.RaidStatus
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 6h
+              master_item:
+                key: 'dell.server.hw.virtualdisk.get[{#DISK_NAME}]'
+              tags:
+                - tag: component
+                  value: storage
+                - tag: component
+                  value: virtualdisk
+            - uuid: 5b9d740b6e4c4204aae91a7fbcf2b359
+              name: '{#DISK_NAME} RAID type'
+              type: DEPENDENT
+              key: 'dell.server.hw.virtualdisk.raidtype[{#DISK_NAME}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.RAIDType
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 6h
+              master_item:
+                key: 'dell.server.hw.virtualdisk.get[{#DISK_NAME}]'
+              tags:
+                - tag: component
+                  value: storage
+                - tag: component
+                  value: virtualdisk
+            - uuid: b7d7752c14b64b04837466690095cf93
+              name: '{#DISK_NAME} Read policy'
+              type: DEPENDENT
+              key: 'dell.server.hw.virtualdisk.readpolicy[{#DISK_NAME}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              status: DISABLED
+              discover: NO_DISCOVER
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.Oem.Dell.DellVirtualDisk.ReadCachePolicy
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 6h
+              master_item:
+                key: 'dell.server.hw.virtualdisk.get[{#DISK_NAME}]'
+              tags:
+                - tag: component
+                  value: storage
+                - tag: component
+                  value: virtualdisk
+            - uuid: 3bcf4355ac0a4478a0b0bcff1ec62b5b
+              name: '{#DISK_NAME} Size'
+              type: DEPENDENT
+              key: 'dell.server.hw.virtualdisk.size[{#DISK_NAME}]'
+              delay: '0'
+              status: DISABLED
+              discover: NO_DISCOVER
+              units: B
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.CapacityBytes
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 6h
+              master_item:
+                key: 'dell.server.hw.virtualdisk.get[{#DISK_NAME}]'
+              tags:
+                - tag: component
+                  value: storage
+                - tag: component
+                  value: virtualdisk
+            - uuid: 6e1b2e808a924233a6bfb940bf67fbd8
+              name: '{#DISK_NAME} Current state'
+              type: DEPENDENT
+              key: 'dell.server.hw.virtualdisk.state[{#DISK_NAME}]'
+              delay: '0'
+              value_type: TEXT
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.Status.State
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 6h
+              master_item:
+                key: 'dell.server.hw.virtualdisk.get[{#DISK_NAME}]'
+              tags:
+                - tag: component
+                  value: storage
+                - tag: component
+                  value: virtualdisk
+            - uuid: 67e3044a53834caa9f8e78c77e77ef55
+              name: '{#DISK_NAME} Status'
+              type: DEPENDENT
+              key: 'dell.server.hw.virtualdisk.status[{#DISK_NAME}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.Status.Health
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 6h
+              master_item:
+                key: 'dell.server.hw.virtualdisk.get[{#DISK_NAME}]'
+              tags:
+                - tag: component
+                  value: storage
+                - tag: component
+                  value: virtualdisk
+              trigger_prototypes:
+                - uuid: 9d476c1b1a6e444ebf132c6e150847c6
+                  expression: 'find(/Dell Idrac by HTTP/dell.server.hw.virtualdisk.status[{#DISK_NAME}],,"like","Critical")=1'
+                  name: '{#DISK_NAME} is in a critical state'
+                  opdata: 'Current state: {ITEM.LASTVALUE1}'
+                  priority: HIGH
+                  manual_close: 'YES'
+                  tags:
+                    - tag: scope
+                      value: availability
+                - uuid: 4cb55e81ff5d4133876a2b432ab7ca5a
+                  expression: 'find(/Dell Idrac by HTTP/dell.server.hw.virtualdisk.status[{#DISK_NAME}],,"like","Warning")=1'
+                  name: '{#DISK_NAME} is in warning state'
+                  opdata: 'Current state: {ITEM.LASTVALUE1}'
+                  priority: WARNING
+                  manual_close: 'YES'
+                  tags:
+                    - tag: scope
+                      value: availability
+            - uuid: c45f08330d7f496f8cdd3e1157a19fed
+              name: '{#DISK_NAME} Write policy'
+              type: DEPENDENT
+              key: 'dell.server.hw.virtualdisk.writepolicy[{#DISK_NAME}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              status: DISABLED
+              discover: NO_DISCOVER
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.Oem.Dell.DellVirtualDisk.WriteCachePolicy
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 6h
+              master_item:
+                key: 'dell.server.hw.virtualdisk.get[{#DISK_NAME}]'
+              tags:
+                - tag: component
+                  value: storage
+                - tag: component
+                  value: virtualdisk
+          url: '{$API.URL}/redfish/v1/Systems/System.Embedded.1/Storage'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  function request(url) {
+                  	api_request = new HttpRequest();
+                  	api_request.addHeader('Authorization: Basic ' + btoa(params.user + ':' + params.password));
+                  	Zabbix.log(4, '[ DELL ] Sending request: ' + url);
+                  
+                  	try {
+                  		response = api_request.get(url);
+                  	} catch (error) {
+                  		Zabbix.log(4, '[ DELL ] Get request returned error ' + error);
+                  		throw 'Get request returned error ' + error + '. Check debug log for more information.';
+                  	}
+                  
+                  	Zabbix.log(4, '[ DELL ] Received response with status code ' +
+                  		api_request.getStatus() + '\n' + response);
+                  
+                  	if (api_request.getStatus() !== 200) {
+                  		var message = 'Request failed with status code ' + api_request.getStatus();
+                  		if (response !== null && typeof response.message === 'string') {
+                  			message += ': ' + response.message;
+                  		}
+                  		throw message + ' Check debug log for more information.';
+                  	}
+                  
+                  	try {
+                  		response = JSON.parse(response);
+                  	} catch (error) {
+                  		Zabbix.log(4, '[ DELL ] Failed to parse response.');
+                  		response = null;
+                  	}
+                  
+                  	return {
+                  		status: api_request.getStatus(),
+                  		body: response
+                  	};
+                  }
+                  
+                  function getField(object, field, def) {
+                  	var names = field.split('.');
+                  	var name = names.shift();
+                  
+                  	while (typeof name !== 'undefined') {
+                  		if (typeof object === 'undefined' || typeof object[name] === 'undefined') {
+                  			return def;
+                  		}
+                  		object = object[name];
+                  		name = names.shift();
+                  	}
+                  	return object;
+                  }
+                  
+                  try {
+                  	storages = JSON.parse(value);
+                  } catch (error) {
+                  	Zabbix.log(4, '[ DELL ] Failed to parse input value.');
+                  	storages = null;
+                  }
+                  
+                  var params = {
+                  	url: '{$API.URL}',
+                  	user: '{$API.USER}',
+                  	password: '{$API.PASSWORD}'
+                  };
+                  
+                  var result = [];
+                  
+                  // 修正 URL，不再加上 params.url
+                  if (storages.Members instanceof Array) {
+                  	storages.Members.forEach(function (storage) {
+                  		if (typeof storage["@odata.id"] === 'string') {
+                  			var storage_url = storage["@odata.id"];
+                  			var volumes_response = request(params.url + storage_url + '/Volumes');
+                  			var volumes = volumes_response.body;
+                  
+                  			if (volumes.Members instanceof Array) {
+                  				volumes.Members.forEach(function (volume) {
+                  					if (typeof volume["@odata.id"] === 'string') {
+                  						var volume_response = request(params.url + volume["@odata.id"]);
+                  						var volume_data = volume_response.body;
+                  						result.push({
+                  							'{#DISK_NAME}': getField(volume_data, 'Name', ''),
+                  							'{#ODATA}': volume["@odata.id"]
+                  						});
+                  					}
+                  				});
+                  			}
+                  		}
+                  	});
+                  }
+                  
+                  return JSON.stringify(result);
+                  
+      tags:
+        - tag: class
+          value: hardware
+        - tag: target
+          value: dell
+        - tag: target
+          value: 'dell poweredge'
+      macros:
+        - macro: '{$API.PASSWORD}'
+          type: SECRET_TEXT
+          description: 'The Dell iDRAC user password.'
+        - macro: '{$API.URL}'
+          description: 'The Dell iDRAC Redfish API URL in the format `<scheme>://<host>:<port>`.'
+        - macro: '{$API.USER}'
+          description: 'The Dell iDRAC username.'
+        - macro: '{$IFCONTROL}'
+          value: '1'
+          description: 'Link status trigger will be fired only for interfaces that have the context macro equaled 1.'
+      dashboards:
+        - uuid: af762294bb054245b8a9921dc52b9a0f
+          name: 'New dashboard'
+          pages:
+            - widgets:
+                - type: graph
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        host: 'Dell Idrac by HTTP'
+                        key: icmppingsec
+                    - type: STRING
+                      name: reference
+                      value: WYRJW
+                    - type: INTEGER
+                      name: source_type
+                      value: '1'
+                - type: graphprototype
+                  name: 溫度
+                  'y': '5'
+                  width: '72'
+                  height: '5'
+                  fields:
+                    - type: ITEM_PROTOTYPE
+                      name: itemid.0
+                      value:
+                        host: 'Dell Idrac by HTTP'
+                        key: 'dell.server.sensor.temp.value[{#SENSOR_NAME}]'
+                    - type: STRING
+                      name: reference
+                      value: EHWTR
+                    - type: INTEGER
+                      name: source_type
+                      value: '3'
+                - type: graphprototype
+                  'y': '10'
+                  width: '72'
+                  height: '5'
+                  fields:
+                    - type: ITEM_PROTOTYPE
+                      name: itemid.0
+                      value:
+                        host: 'Dell Idrac by HTTP'
+                        key: 'dell.server.net.if.speed[{#IFNAME}]'
+                    - type: STRING
+                      name: reference
+                      value: QFRMP
+                    - type: INTEGER
+                      name: source_type
+                      value: '3'
+                - type: honeycomb
+                  name: 'Disk Size'
+                  'y': '15'
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: STRING
+                      name: items.0
+                      value: '* Size'
+                    - type: INTEGER
+                      name: item_tags.0.operator
+                      value: '0'
+                    - type: STRING
+                      name: item_tags.0.tag
+                      value: component
+                    - type: STRING
+                      name: item_tags.0.value
+                      value: physicaldisk
+                    - type: STRING
+                      name: primary_label
+                      value: '{ITEM.NAME}'
+                    - type: STRING
+                      name: reference
+                      value: KQROC
+                - type: honeycomb
+                  name: 'SSD Life Left'
+                  'y': '20'
+                  width: '72'
+                  height: '5'
+                  fields:
+                    - type: STRING
+                      name: items.0
+                      value: '* Life Left'
+                    - type: INTEGER
+                      name: item_tags.0.operator
+                      value: '0'
+                    - type: STRING
+                      name: item_tags.0.tag
+                      value: component
+                    - type: STRING
+                      name: item_tags.0.value
+                      value: physicaldisk
+                    - type: STRING
+                      name: primary_label
+                      value: '{ITEM.NAME}'
+                    - type: STRING
+                      name: reference
+                      value: GAZPG
+                    - type: STRING
+                      name: thresholds.0.color
+                      value: FF465C
+                    - type: STRING
+                      name: thresholds.0.threshold
+                      value: '10'
+                    - type: STRING
+                      name: thresholds.1.color
+                      value: FFD54F
+                    - type: STRING
+                      name: thresholds.1.threshold
+                      value: '30'
+                    - type: STRING
+                      name: thresholds.2.color
+                      value: 0EC9AC
+                    - type: STRING
+                      name: thresholds.2.threshold
+                      value: '70'
+                - type: graph
+                  x: '36'
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        host: 'Dell Idrac by HTTP'
+                        key: icmppingloss
+                    - type: STRING
+                      name: reference
+                      value: ZZSES
+                    - type: INTEGER
+                      name: source_type
+                      value: '1'
+                - type: honeycomb
+                  name: 'Disk Status'
+                  x: '36'
+                  'y': '15'
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: STRING
+                      name: items.0
+                      value: '* Status'
+                    - type: INTEGER
+                      name: item_tags.0.operator
+                      value: '0'
+                    - type: STRING
+                      name: item_tags.0.tag
+                      value: component
+                    - type: STRING
+                      name: item_tags.0.value
+                      value: physicaldisk
+                    - type: STRING
+                      name: primary_label
+                      value: '{ITEM.NAME}'
+                    - type: STRING
+                      name: reference
+                      value: OIXTX
+      valuemaps:
+        - uuid: a15889f33af04f5787fbfcece27b7ae5
+          name: zabbix.host.available
+          mappings:
+            - value: '0'
+              newvalue: 'not available'
+            - value: '1'
+              newvalue: available
+            - value: '2'
+              newvalue: unknown
